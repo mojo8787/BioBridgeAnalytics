@@ -14,6 +14,10 @@ from components.file_handler import save_figure, export_analysis_report
 from utils.helpers import format_bytes, get_data_summary
 from utils.constants import EXAMPLE_DESCRIPTIONS, APP_INFO
 
+# Import new API components
+from components.genomic_api import search_ncbi_databases, get_sequence_record, fetch_protein_info_from_uniprot, search_uniprot, analyze_sequence
+from components.ai_integration import analyze_text_with_openai, summarize_research_paper, extract_biological_entities, analyze_sequence_with_ai, huggingface_protein_prediction
+
 # Set page config
 st.set_page_config(
     page_title="BioData Explorer",
@@ -41,6 +45,20 @@ if 'current_view' not in st.session_state:
     st.session_state.current_view = "upload"
 if 'analysis_results' not in st.session_state:
     st.session_state.analysis_results = {}
+    
+# API related session state
+if 'entrez_email' not in st.session_state:
+    st.session_state.entrez_email = ""
+if 'openai_api_key' not in st.session_state:
+    st.session_state.openai_api_key = ""
+if 'sequence' not in st.session_state:
+    st.session_state.sequence = ""
+if 'ncbi_results' not in st.session_state:
+    st.session_state.ncbi_results = None
+if 'uniprot_results' not in st.session_state:
+    st.session_state.uniprot_results = None
+if 'ai_analysis_results' not in st.session_state:
+    st.session_state.ai_analysis_results = None
 
 # Main title
 st.title("BioData Explorer 🧬")
@@ -51,9 +69,11 @@ with st.sidebar:
     st.header("Navigation")
     
     # Only show navigation options if data is loaded
+    # Data Analysis section (only shown if data is loaded)
     if st.session_state.data is not None:
+        st.sidebar.header("Data Analysis Tools")
         selected_page = st.radio(
-            "Go to:",
+            "Data Analysis:",
             ["Data Upload", "Data Overview", "Statistical Analysis", "Visualization", "Machine Learning", "Export Results"]
         )
         
@@ -70,7 +90,19 @@ with st.sidebar:
         elif selected_page == "Export Results":
             st.session_state.current_view = "export"
     else:
-        st.info("Upload a dataset to enable navigation options")
+        st.info("Upload a dataset to enable data analysis options")
+    
+    # API Tools section (available even without data upload)
+    st.sidebar.header("API Tools")
+    api_page = st.sidebar.radio(
+        "API Tools:",
+        ["Genomic/Protein API", "AI Integration"]
+    )
+    
+    if api_page == "Genomic/Protein API":
+        st.session_state.current_view = "genomic_api"
+    elif api_page == "AI Integration":
+        st.session_state.current_view = "ai_integration"
     
     # App information in the sidebar
     st.sidebar.markdown("---")
@@ -1217,3 +1249,685 @@ elif st.session_state.current_view == "export":
                         file_name="biodata_analysis.xlsx",
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                     )
+
+# Genomic/Protein API View
+elif st.session_state.current_view == "genomic_api":
+    st.header("Genomic & Protein API Tools")
+    st.write("""
+    Access and analyze biological sequence data from public databases like NCBI and UniProt.
+    These tools help you search for genes and proteins, retrieve detailed information,
+    and perform basic sequence analysis.
+    """)
+    
+    # API Configuration section
+    with st.expander("API Configuration", expanded=True):
+        st.write("Configure your API settings for genomic and protein databases.")
+        
+        # Email for NCBI Entrez
+        entrez_email = st.text_input(
+            "Email for NCBI Entrez API",
+            value=st.session_state.entrez_email,
+            help="Required for NCBI database access. Used to identify your requests to NCBI."
+        )
+        
+        if entrez_email != st.session_state.entrez_email:
+            st.session_state.entrez_email = entrez_email
+            # Update the Entrez email in the genomic_api module
+            from components.genomic_api import Entrez
+            Entrez.email = entrez_email
+    
+    # Create tabs for different API functions
+    api_tab = st.tabs(["NCBI Search", "UniProt Search", "Sequence Analysis"])
+    
+    # NCBI Search Tab
+    with api_tab[0]:
+        st.subheader("Search NCBI Databases")
+        
+        col1, col2, col3 = st.columns([2, 1, 1])
+        
+        with col1:
+            ncbi_search_term = st.text_input(
+                "Search Term",
+                placeholder="e.g., BRCA1, insulin, Escherichia coli",
+                help="Enter gene, protein, organism, or keyword"
+            )
+        
+        with col2:
+            ncbi_database = st.selectbox(
+                "Database",
+                ["nucleotide", "protein", "gene", "pubmed"],
+                help="Select which NCBI database to search"
+            )
+        
+        with col3:
+            ncbi_max_results = st.number_input(
+                "Max Results",
+                min_value=1,
+                max_value=100,
+                value=10,
+                help="Maximum number of results to retrieve"
+            )
+        
+        search_button = st.button("Search NCBI", use_container_width=True)
+        
+        if search_button and ncbi_search_term:
+            if not entrez_email:
+                st.error("Please provide an email address for NCBI Entrez API")
+            else:
+                with st.spinner("Searching NCBI databases..."):
+                    try:
+                        results = search_ncbi_databases(
+                            term=ncbi_search_term,
+                            database=ncbi_database,
+                            max_results=ncbi_max_results
+                        )
+                        
+                        if results and results.get("id_list"):
+                            st.session_state.ncbi_results = results
+                            st.success(f"Found {len(results['id_list'])} results")
+                            
+                            # Display the IDs
+                            st.subheader("Result IDs")
+                            st.write("Click on an ID to view detailed information")
+                            
+                            # Create buttons for each ID
+                            cols = st.columns(3)
+                            for i, id in enumerate(results["id_list"]):
+                                if cols[i % 3].button(id, key=f"ncbi_id_{id}"):
+                                    with st.spinner(f"Fetching details for {id}..."):
+                                        details = get_sequence_record(id, database=ncbi_database)
+                                        if details:
+                                            st.subheader(f"Details for {id}")
+                                            
+                                            # Display basic info
+                                            st.markdown(f"**Name:** {details['name']}")
+                                            st.markdown(f"**Description:** {details['description']}")
+                                            st.markdown(f"**Length:** {details['length']} bp/aa")
+                                            
+                                            # Sequence with expander
+                                            with st.expander("Sequence"):
+                                                st.text_area("", value=details['sequence'], height=200)
+                                                
+                                            # Features in a dataframe
+                                            if details['features']:
+                                                st.subheader("Features")
+                                                features_df = pd.DataFrame([
+                                                    {
+                                                        'Type': f['type'],
+                                                        'Location': f['location'],
+                                                        'Qualifiers': ', '.join([f"{k}: {v if not isinstance(v, list) else ', '.join(v)}" 
+                                                                              for k, v in f['qualifiers'].items()])
+                                                    }
+                                                    for f in details['features'][:20]  # Limit to first 20 features
+                                                ])
+                                                st.dataframe(features_df)
+                                                
+                                            # Annotations
+                                            with st.expander("Annotations"):
+                                                for key, value in details['annotations'].items():
+                                                    if isinstance(value, (str, int, float)):
+                                                        st.markdown(f"**{key}:** {value}")
+                                                    elif isinstance(value, list) and len(value) < 5:
+                                                        st.markdown(f"**{key}:** {', '.join(str(v) for v in value)}")
+                                                    else:
+                                                        st.markdown(f"**{key}:** *Complex data*")
+                                        else:
+                                            st.error(f"Could not fetch details for {id}")
+                        else:
+                            st.warning("No results found. Try a different search term.")
+                    except Exception as e:
+                        st.error(f"Error searching NCBI: {str(e)}")
+    
+    # UniProt Search Tab
+    with api_tab[1]:
+        st.subheader("Search UniProt Database")
+        
+        col1, col2 = st.columns([3, 1])
+        
+        with col1:
+            uniprot_query = st.text_input(
+                "Search Query",
+                placeholder="e.g., insulin human, P01308, hemoglobin",
+                help="Enter protein name, UniProt ID, gene name, or organism"
+            )
+        
+        with col2:
+            uniprot_limit = st.number_input(
+                "Result Limit",
+                min_value=1,
+                max_value=50,
+                value=10,
+                help="Maximum number of results to retrieve"
+            )
+        
+        search_uniprot_button = st.button("Search UniProt", use_container_width=True)
+        
+        if search_uniprot_button and uniprot_query:
+            with st.spinner("Searching UniProt database..."):
+                try:
+                    results = search_uniprot(uniprot_query, limit=uniprot_limit)
+                    
+                    if results:
+                        st.session_state.uniprot_results = results
+                        st.success(f"Found {len(results)} results")
+                        
+                        # Create a dataframe of results
+                        results_df = pd.DataFrame(results)
+                        st.dataframe(results_df)
+                        
+                        # Allow selecting an entry to view details
+                        selected_id = st.selectbox(
+                            "Select an entry to view details:",
+                            [f"{r['id']} - {r['protein_name']}" for r in results]
+                        )
+                        
+                        if selected_id:
+                            uniprot_id = selected_id.split(" - ")[0]
+                            with st.spinner(f"Fetching details for {uniprot_id}..."):
+                                protein_info = fetch_protein_info_from_uniprot(uniprot_id)
+                                
+                                if protein_info:
+                                    st.subheader(f"Protein Details: {protein_info['name']}")
+                                    
+                                    col1, col2 = st.columns(2)
+                                    with col1:
+                                        st.markdown(f"**ID:** {protein_info['id']}")
+                                        st.markdown(f"**Gene:** {protein_info['gene']}")
+                                        st.markdown(f"**Organism:** {protein_info['organism']}")
+                                        st.markdown(f"**Length:** {protein_info['length']} amino acids")
+                                    
+                                    with col2:
+                                        if protein_info['function']:
+                                            st.markdown("**Function:**")
+                                            st.markdown(f"_{protein_info['function']}_")
+                                    
+                                    # Sequence with expander
+                                    with st.expander("Protein Sequence"):
+                                        sequence = protein_info['sequence']
+                                        st.text_area("", value=sequence, height=200)
+                                        
+                                        # Copy button
+                                        if st.button("Copy Sequence to Clipboard"):
+                                            st.session_state.sequence = sequence
+                                            st.success("Sequence copied to clipboard and available in the Sequence Analysis tab")
+                                    
+                                    # Features
+                                    if protein_info['features'] and len(protein_info['features']) > 0:
+                                        st.subheader("Features")
+                                        
+                                        # Create a simpler representation for the dataframe
+                                        features_simple = []
+                                        for feature in protein_info['features']:
+                                            feature_simple = {
+                                                'Type': feature['type'],
+                                                'Description': feature['description']
+                                            }
+                                            
+                                            # Extract location information
+                                            if isinstance(feature['location'], dict):
+                                                if 'start' in feature['location'] and 'end' in feature['location']:
+                                                    start = feature['location'].get('start', {}).get('value', '?')
+                                                    end = feature['location'].get('end', {}).get('value', '?')
+                                                    feature_simple['Position'] = f"{start}-{end}"
+                                                elif 'position' in feature['location']:
+                                                    pos = feature['location'].get('position', {}).get('value', '?')
+                                                    feature_simple['Position'] = pos
+                                                else:
+                                                    feature_simple['Position'] = "Unknown"
+                                            else:
+                                                feature_simple['Position'] = "Unknown"
+                                                
+                                            features_simple.append(feature_simple)
+                                        
+                                        features_df = pd.DataFrame(features_simple)
+                                        st.dataframe(features_df)
+                                else:
+                                    st.error(f"Could not fetch details for {uniprot_id}")
+                    else:
+                        st.warning("No results found. Try a different search query.")
+                except Exception as e:
+                    st.error(f"Error searching UniProt: {str(e)}")
+    
+    # Sequence Analysis Tab
+    with api_tab[2]:
+        st.subheader("Sequence Analysis")
+        st.write("Analyze DNA, RNA, or protein sequences using bioinformatics tools.")
+        
+        # Input sequence
+        sequence_input = st.text_area(
+            "Enter Sequence",
+            value=st.session_state.sequence,
+            height=200,
+            placeholder="Paste your DNA, RNA, or protein sequence here...",
+            help="Input raw sequence without headers or formatting"
+        )
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Allow user to clean the sequence
+            clean_sequence = st.checkbox(
+                "Clean sequence (remove numbers, spaces, and non-standard characters)",
+                value=True
+            )
+        
+        with col2:
+            analysis_type = st.selectbox(
+                "Analysis Type",
+                ["basic", "detailed"]
+            )
+        
+        # Analyze button
+        analyze_button = st.button("Analyze Sequence", use_container_width=True)
+        
+        if analyze_button and sequence_input:
+            # Clean the sequence if requested
+            if clean_sequence:
+                cleaned_sequence = ''.join(c for c in sequence_input if c.isalpha())
+                if cleaned_sequence != sequence_input:
+                    st.info(f"Cleaned sequence from {len(sequence_input)} to {len(cleaned_sequence)} characters")
+                    sequence_input = cleaned_sequence
+            
+            # Save to session state
+            st.session_state.sequence = sequence_input
+            
+            with st.spinner("Analyzing sequence..."):
+                try:
+                    results = analyze_sequence(sequence_input, analysis_type=analysis_type)
+                    
+                    if results:
+                        st.success("Analysis complete!")
+                        
+                        # Basic information
+                        st.subheader("Basic Information")
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("Length", results["length"], help="Number of nucleotides or amino acids")
+                        col2.metric("Molecular Weight", f"{results['molecular_weight']:.2f}", help="Molecular weight in Da")
+                        
+                        if "is_dna" in results:
+                            col3.metric("Sequence Type", "DNA/RNA" if results["is_dna"] else "Protein")
+                            
+                            if results["is_dna"]:
+                                col3.metric("GC Content", f"{results['gc_content']:.2f}%", help="Percentage of G and C nucleotides")
+                        
+                        # DNA-specific analysis
+                        if "is_dna" in results and results["is_dna"]:
+                            st.subheader("DNA Analysis")
+                            
+                            # Nucleotide composition
+                            st.write("Nucleotide Composition:")
+                            nucleotide_df = pd.DataFrame({
+                                'Nucleotide': results["nucleotide_counts"].keys(),
+                                'Count': results["nucleotide_counts"].values(),
+                                'Percentage': [f"{(count/results['length'])*100:.2f}%" 
+                                             for count in results["nucleotide_counts"].values()]
+                            })
+                            st.dataframe(nucleotide_df)
+                            
+                            # Transcription and translation
+                            st.write("Transcription (DNA → RNA):")
+                            st.text_area("RNA", results["transcription"], height=100)
+                            
+                            st.write("Translation (RNA → Protein):")
+                            st.text_area("Protein", results["translation"], height=100)
+                        
+                        # Protein-specific analysis
+                        elif "is_dna" in results and not results["is_dna"]:
+                            st.subheader("Protein Analysis")
+                            
+                            # Create tabs for different protein analyses
+                            protein_tabs = st.tabs(["Amino Acid Composition", "Physicochemical Properties", "Structure Prediction"])
+                            
+                            # Amino Acid Composition tab
+                            with protein_tabs[0]:
+                                if "amino_acid_counts" in results:
+                                    aa_counts = results["amino_acid_counts"]
+                                    aa_df = pd.DataFrame({
+                                        'Amino Acid': aa_counts.keys(),
+                                        'Count': aa_counts.values(),
+                                        'Percentage': [f"{(count/results['length'])*100:.2f}%" 
+                                                     for count in aa_counts.values()]
+                                    })
+                                    st.dataframe(aa_df)
+                            
+                            # Physicochemical Properties tab
+                            with protein_tabs[1]:
+                                if "isoelectric_point" in results:
+                                    col1, col2 = st.columns(2)
+                                    col1.metric("Isoelectric Point (pI)", f"{results['isoelectric_point']:.2f}")
+                                    col2.metric("Hydrophobicity (GRAVY)", f"{results['gravy']:.3f}")
+                                    
+                                    col1, col2 = st.columns(2)
+                                    col1.metric("Aromaticity", f"{results['aromaticity']:.3f}")
+                                    col2.metric("Instability Index", f"{results['instability_index']:.2f}", 
+                                              help="Value > 40 suggests unstable protein")
+                            
+                            # Structure Prediction tab
+                            with protein_tabs[2]:
+                                if "secondary_structure_fraction" in results:
+                                    ss_fraction = results["secondary_structure_fraction"]
+                                    st.write("Predicted Secondary Structure Composition:")
+                                    col1, col2, col3 = st.columns(3)
+                                    col1.metric("Helix", f"{ss_fraction[0]:.2%}")
+                                    col2.metric("Sheet", f"{ss_fraction[1]:.2%}")
+                                    col3.metric("Coil", f"{ss_fraction[2]:.2%}")
+                    else:
+                        st.error("Could not analyze the sequence. Please check if it's a valid biological sequence.")
+                except Exception as e:
+                    st.error(f"Error analyzing sequence: {str(e)}")
+
+# AI Integration View
+elif st.session_state.current_view == "ai_integration":
+    st.header("AI Integration Tools")
+    st.write("""
+    Leverage artificial intelligence to analyze biological data, summarize research papers,
+    and gain insights from complex biological information.
+    """)
+    
+    # API Configuration section
+    with st.expander("API Configuration", expanded=True):
+        st.write("Configure your API settings for AI services.")
+        
+        # OpenAI API Key
+        openai_api_key = st.text_input(
+            "OpenAI API Key",
+            value=st.session_state.openai_api_key,
+            type="password",
+            help="Required for OpenAI services. Get your API key from openai.com"
+        )
+        
+        if openai_api_key != st.session_state.openai_api_key:
+            st.session_state.openai_api_key = openai_api_key
+            # Set the API key in the OpenAI package
+            import openai
+            openai.api_key = openai_api_key
+    
+    # Create tabs for different AI functions
+    ai_tab = st.tabs([
+        "Research Paper Analysis", 
+        "Biological Text Mining", 
+        "Sequence Analysis with AI", 
+        "Protein Structure Prediction"
+    ])
+    
+    # Research Paper Analysis Tab
+    with ai_tab[0]:
+        st.subheader("Research Paper Analysis")
+        st.write("Upload or paste a research paper to get an AI-generated summary and key findings.")
+        
+        # Text input method
+        input_method = st.radio(
+            "Input Method",
+            ["Paste Text", "Upload PDF (Coming Soon)"]
+        )
+        
+        if input_method == "Paste Text":
+            paper_text = st.text_area(
+                "Paste Research Paper Text",
+                height=300,
+                placeholder="Paste the abstract or full text of a research paper here..."
+            )
+            
+            # Focus area
+            focus_area = st.text_input(
+                "Focus Area (Optional)",
+                placeholder="e.g., gene expression, protein folding, clinical implications",
+                help="Specify a particular aspect you want the summary to focus on"
+            )
+            
+            # Analyze button
+            analyze_paper_button = st.button("Analyze Paper", use_container_width=True)
+            
+            if analyze_paper_button and paper_text:
+                if not openai_api_key:
+                    st.error("Please provide an OpenAI API key in the API Configuration section")
+                else:
+                    with st.spinner("Analyzing research paper..."):
+                        try:
+                            summary = summarize_research_paper(
+                                text=paper_text,
+                                focus_area=focus_area if focus_area else None
+                            )
+                            
+                            if summary:
+                                st.success("Analysis complete!")
+                                st.subheader("Research Paper Summary")
+                                st.markdown(summary)
+                            else:
+                                st.error("Could not generate summary. Please check your API key and try again.")
+                        except Exception as e:
+                            st.error(f"Error analyzing research paper: {str(e)}")
+        else:
+            st.info("PDF upload functionality will be available in a future update.")
+    
+    # Biological Text Mining Tab
+    with ai_tab[1]:
+        st.subheader("Biological Text Mining")
+        st.write("Extract biological entities and relationships from text using AI.")
+        
+        bio_text = st.text_area(
+            "Enter Biological Text",
+            height=250,
+            placeholder="Paste text containing biological entities (e.g., genes, proteins, diseases, compounds)..."
+        )
+        
+        extract_button = st.button("Extract Entities", use_container_width=True)
+        
+        if extract_button and bio_text:
+            if not openai_api_key:
+                st.error("Please provide an OpenAI API key in the API Configuration section")
+            else:
+                with st.spinner("Extracting biological entities..."):
+                    try:
+                        entities = extract_biological_entities(bio_text)
+                        
+                        if entities:
+                            st.success("Extraction complete!")
+                            
+                            # Create tabs for different entity types
+                            entity_tabs = st.tabs([
+                                "Genes & Proteins", 
+                                "Organisms", 
+                                "Diseases", 
+                                "Chemicals", 
+                                "Processes", 
+                                "Techniques"
+                            ])
+                            
+                            # Display entities by category
+                            with entity_tabs[0]:
+                                if "Genes and proteins" in entities and entities["Genes and proteins"]:
+                                    st.write(", ".join(entities["Genes and proteins"]))
+                                else:
+                                    st.info("No genes or proteins identified.")
+                                    
+                            with entity_tabs[1]:
+                                if "Organisms and species" in entities and entities["Organisms and species"]:
+                                    st.write(", ".join(entities["Organisms and species"]))
+                                else:
+                                    st.info("No organisms identified.")
+                                    
+                            with entity_tabs[2]:
+                                if "Diseases and conditions" in entities and entities["Diseases and conditions"]:
+                                    st.write(", ".join(entities["Diseases and conditions"]))
+                                else:
+                                    st.info("No diseases identified.")
+                                    
+                            with entity_tabs[3]:
+                                if "Chemical compounds and drugs" in entities and entities["Chemical compounds and drugs"]:
+                                    st.write(", ".join(entities["Chemical compounds and drugs"]))
+                                else:
+                                    st.info("No chemicals identified.")
+                                    
+                            with entity_tabs[4]:
+                                if "Biological processes" in entities and entities["Biological processes"]:
+                                    st.write(", ".join(entities["Biological processes"]))
+                                else:
+                                    st.info("No biological processes identified.")
+                                    
+                            with entity_tabs[5]:
+                                if "Laboratory techniques" in entities and entities["Laboratory techniques"]:
+                                    st.write(", ".join(entities["Laboratory techniques"]))
+                                else:
+                                    st.info("No laboratory techniques identified.")
+                        else:
+                            st.error("Could not extract entities. Please check your API key and try again.")
+                    except Exception as e:
+                        st.error(f"Error extracting entities: {str(e)}")
+    
+    # Sequence Analysis with AI Tab
+    with ai_tab[2]:
+        st.subheader("Sequence Analysis with AI")
+        st.write("Analyze biological sequences using AI to predict functions and properties.")
+        
+        # Input sequence
+        ai_sequence_input = st.text_area(
+            "Enter Biological Sequence",
+            height=200,
+            placeholder="Paste a DNA, RNA, or protein sequence here...",
+            help="Input raw sequence without headers or formatting"
+        )
+        
+        # Analysis type
+        ai_analysis_type = st.selectbox(
+            "Analysis Type",
+            ["Function Prediction", "Structural Prediction"],
+            help="Select the type of AI analysis to perform"
+        )
+        
+        analyze_with_ai_button = st.button("Analyze with AI", use_container_width=True)
+        
+        if analyze_with_ai_button and ai_sequence_input:
+            if not openai_api_key:
+                st.error("Please provide an OpenAI API key in the API Configuration section")
+            else:
+                # Clean the sequence
+                cleaned_sequence = ''.join(c for c in ai_sequence_input if c.isalpha())
+                
+                with st.spinner("Analyzing sequence with AI..."):
+                    try:
+                        analysis_type_param = "function_prediction"
+                        if ai_analysis_type == "Structural Prediction":
+                            analysis_type_param = "structural_prediction"
+                        
+                        results = analyze_sequence_with_ai(
+                            sequence=cleaned_sequence,
+                            analysis_type=analysis_type_param
+                        )
+                        
+                        if results:
+                            st.session_state.ai_analysis_results = results
+                            st.success("AI analysis complete!")
+                            
+                            if "error" in results:
+                                st.error(results["error"])
+                                if "raw_result" in results:
+                                    with st.expander("Raw AI Response"):
+                                        st.text(results["raw_result"])
+                            else:
+                                # Display the results based on the analysis type
+                                if analysis_type_param == "function_prediction" and "predicted_functions" in results:
+                                    st.subheader("Predicted Functions")
+                                    
+                                    for i, func in enumerate(results["predicted_functions"]):
+                                        confidence = results.get("confidence", [])[i] if i < len(results.get("confidence", [])) else "Unknown"
+                                        rationale = results.get("rationale", [])[i] if i < len(results.get("rationale", [])) else ""
+                                        
+                                        with st.expander(f"Function {i+1}: {func}"):
+                                            st.write(f"**Confidence:** {confidence}")
+                                            st.write(f"**Rationale:** {rationale}")
+                                
+                                elif analysis_type_param == "structural_prediction":
+                                    st.subheader("Structural Predictions")
+                                    
+                                    # Secondary structure
+                                    if "secondary_structure" in results:
+                                        st.write("**Secondary Structure Prediction:**")
+                                        st.write(results["secondary_structure"])
+                                    
+                                    # Domains
+                                    if "domains" in results:
+                                        st.write("**Potential Domains:**")
+                                        for domain in results["domains"]:
+                                            st.write(f"• {domain}")
+                                    
+                                    # Motifs
+                                    if "motifs" in results:
+                                        st.write("**Structural Motifs:**")
+                                        for motif in results["motifs"]:
+                                            st.write(f"• {motif}")
+                                    
+                                    # Stability
+                                    if "stability" in results:
+                                        st.write("**Stability Prediction:**")
+                                        st.write(results["stability"])
+                        else:
+                            st.error("Could not analyze the sequence. Please check your API key and try again.")
+                    except Exception as e:
+                        st.error(f"Error in AI analysis: {str(e)}")
+    
+    # Protein Structure Prediction Tab
+    with ai_tab[3]:
+        st.subheader("Protein Structure Prediction")
+        st.write("Use language models to predict protein structure properties.")
+        
+        # Input sequence
+        protein_sequence = st.text_area(
+            "Enter Protein Sequence",
+            height=200,
+            placeholder="Paste a protein sequence here...",
+            help="Input raw amino acid sequence without headers or formatting"
+        )
+        
+        # Model selection
+        model_id = st.selectbox(
+            "Protein Language Model",
+            ["facebook/esm2_t33_650M_UR50D", "facebook/esm2_t12_35M_UR50D"],
+            help="Select a protein language model to use for prediction"
+        )
+        
+        predict_structure_button = st.button("Predict Structure", use_container_width=True)
+        
+        if predict_structure_button and protein_sequence:
+            # Clean and validate the sequence
+            cleaned_sequence = ''.join(c for c in protein_sequence if c.isalpha())
+            valid_aa = set("ACDEFGHIKLMNPQRSTVWY")
+            
+            if not all(aa in valid_aa for aa in cleaned_sequence.upper()):
+                st.warning("The sequence contains characters not found in standard protein sequences (ACDEFGHIKLMNPQRSTVWY).")
+            
+            with st.spinner("Running protein structure prediction..."):
+                try:
+                    result = huggingface_protein_prediction(
+                        sequence=cleaned_sequence,
+                        model_id=model_id
+                    )
+                    
+                    if result:
+                        st.success("Prediction complete!")
+                        
+                        # Display embedding information
+                        st.subheader("Protein Embedding")
+                        st.write("The protein language model has converted your protein sequence into a mathematical representation (embedding).")
+                        
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("Sequence Length", result["sequence_length"])
+                            st.metric("Unique Amino Acids", result["unique_amino_acids"])
+                        
+                        with col2:
+                            st.metric("Most Common Amino Acid", result["most_common_aa"])
+                            st.metric("Model", result["model_id"].split("/")[-1])
+                        
+                        st.info("""
+                        **What does this mean?**
+                        
+                        Protein language models like ESM (Evolutionary Scale Modeling) learn the patterns and relationships
+                        in protein sequences from millions of natural proteins. These embeddings capture information about
+                        the protein's structure, function, and evolutionary relationships. They can be used for various tasks
+                        such as function prediction, structure prediction, and protein design.
+                        """)
+                    else:
+                        st.error("Could not generate predictions. Please try again with a valid protein sequence.")
+                except Exception as e:
+                    st.error(f"Error in protein structure prediction: {str(e)}")
