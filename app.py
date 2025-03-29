@@ -60,9 +60,59 @@ if 'uniprot_results' not in st.session_state:
 if 'ai_analysis_results' not in st.session_state:
     st.session_state.ai_analysis_results = None
 
-# Main title
-st.title("BioData Explorer 🧬")
-st.subheader("A platform for exploring biological research datasets")
+# Custom CSS for styling
+st.markdown("""
+<style>
+    .main-header {
+        font-size: 2.5rem !important;
+        color: #1E3A8A !important;
+        margin-bottom: 0.2rem !important;
+    }
+    .sub-header {
+        font-size: 1.2rem !important;
+        color: #4B5563 !important;
+        margin-bottom: 1.5rem !important;
+    }
+    .card {
+        border-radius: 0.5rem;
+        background-color: #F9FAFB;
+        padding: 1.5rem;
+        margin-bottom: 1rem;
+        border-left: 4px solid #4169E1;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+    }
+    .highlight {
+        color: #4169E1;
+        font-weight: bold;
+    }
+    /* Tool cards styling */
+    .tool-card {
+        padding: 1rem;
+        border-radius: 0.5rem;
+        margin: 0.5rem 0;
+        background-color: white;
+        border: 1px solid #E5E7EB;
+        transition: transform 0.2s ease-in-out;
+    }
+    .tool-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Main title with enhanced styling
+st.markdown('<h1 class="main-header">BioData Explorer 🧬</h1>', unsafe_allow_html=True)
+st.markdown('<p class="sub-header">Advanced platform for biological data analysis and exploration</p>', unsafe_allow_html=True)
+
+# Welcome card with description
+st.markdown("""
+<div class="card">
+    <h3>Welcome to BioData Explorer</h3>
+    <p>A comprehensive platform designed for <span class="highlight">biologists, researchers, and data scientists</span> working with biological data. 
+    Upload your dataset or connect to biological databases to begin your data exploration journey.</p>
+</div>
+""", unsafe_allow_html=True)
 
 # Sidebar navigation
 with st.sidebar:
@@ -586,10 +636,30 @@ elif st.session_state.current_view == "statistics":
 elif st.session_state.current_view == "visualization":
     st.header("Data Visualization")
     
+    # Visual cards for visualization options
+    st.markdown("### Select a Visualization Type")
+    
+    viz_options = ["Scatter Plot", "Box Plot", "Histogram", "Heatmap", "PCA Plot"]
+    viz_descriptions = VISUALIZATION_DESCRIPTIONS
+    
+    # Create columns for the visualization cards
+    cols = st.columns(3)
+    
+    # Using custom tool cards for visualization options
+    for i, viz in enumerate(viz_options):
+        with cols[i % 3]:
+            with st.container():
+                st.markdown(f"""
+                <div class="tool-card">
+                    <h4>{viz}</h4>
+                    <p>{viz_descriptions[viz].strip()}</p>
+                </div>
+                """, unsafe_allow_html=True)
+    
     # Select visualization type
     viz_type = st.selectbox(
-        "Select Visualization Type",
-        ["Scatter Plot", "Box Plot", "Histogram", "Heatmap", "PCA Plot"]
+        "Choose Visualization Method",
+        viz_options
     )
     
     if viz_type == "Scatter Plot":
@@ -852,10 +922,30 @@ elif st.session_state.current_view == "visualization":
 elif st.session_state.current_view == "ml":
     st.header("Machine Learning Analysis")
     
+    # Visual cards for ML options
+    st.markdown("### Select a Machine Learning Method")
+    
+    ml_options = ["Clustering", "Simple Prediction"]
+    ml_descriptions = ML_ANALYSIS_DESCRIPTIONS
+    
+    # Create columns for the ML cards
+    cols = st.columns(2)
+    
+    # Using custom tool cards for ML options
+    for i, ml in enumerate(ml_options):
+        with cols[i % 2]:
+            with st.container():
+                st.markdown(f"""
+                <div class="tool-card">
+                    <h4>{ml}</h4>
+                    <p>{ml_descriptions[ml].strip()}</p>
+                </div>
+                """, unsafe_allow_html=True)
+    
     # Select ML analysis type
     ml_type = st.selectbox(
-        "Select Analysis Type",
-        ["Clustering", "Simple Prediction"]
+        "Choose Analysis Method",
+        ml_options
     )
     
     if ml_type == "Clustering":

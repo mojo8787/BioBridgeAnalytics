@@ -1,14 +1,22 @@
 # Application information
 APP_INFO = """
-BioData Explorer is a data analysis platform for biologists and researchers.
+### BioData Explorer 🧬
 
-The application provides tools for:
-• Data loading and preprocessing
-• Statistical analysis
-• Visualization
-• Machine learning
+A comprehensive biological data analysis platform developed by **AlMotasem Bellah Younis, PhD**. 
 
-Created for biological data analysis.
+Dr. Younis is a researcher in nanoparticle & antimicrobial studies with a PhD in Biochemistry from Mendel University, specializing in:
+- Biotechnology & Microbiology
+- Data Science & Python
+- Machine Learning applications in biological research
+
+The platform integrates cutting-edge tools for:
+• Advanced data analysis & visualization
+• Statistical modeling
+• Machine learning for biological insights
+• Genomic/Protein database integration
+• AI-powered research paper analysis
+
+Copyright © 2024 AlMotasem Bellah Younis
 """
 
 # Example use case descriptions

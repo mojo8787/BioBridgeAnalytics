@@ -4,7 +4,8 @@ address = "0.0.0.0"
 port = 5000
 
 [theme]
-primaryColor = "#4287f5"
-backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#f0f2f6"
-textColor = "#262730"
+primaryColor = "#4169E1"  # Royal Blue
+backgroundColor = "#F8F9FA"  # Light gray-white for better readability
+secondaryBackgroundColor = "#E9ECEF"  # Slightly darker gray for contrast
+textColor = "#212529"  # Dark gray, almost black for better readability
+font = "sans serif"  # Clean, modern font
